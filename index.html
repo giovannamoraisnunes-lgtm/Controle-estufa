@@ -1,0 +1,1749 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoFlora IoT - Controle Automatizado de Estufa</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js para gráficos dinâmicos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- FontAwesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            800: '#166534',
+                            900: '#14532d',
+                            950: '#052e16',
+                        },
+                        darkbg: '#080d0b',
+                        darkcard: '#111a17',
+                        darkborder: '#1e2e29'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #080d0b;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #080d0b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e2e29;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #22c55e;
+        }
+
+        .glass-card {
+            background: rgba(17, 26, 23, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(30, 46, 41, 0.8);
+        }
+
+        .glow-emerald {
+            box-shadow: 0 0 20px -5px rgba(34, 197, 94, 0.25);
+        }
+
+        .glow-amber {
+            box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.25);
+        }
+
+        .glow-rose {
+            box-shadow: 0 0 20px -5px rgba(244, 63, 94, 0.25);
+        }
+
+        /* LED Indicator Animation */
+        .led-pulse {
+            animation: pulse-glow 2s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.95); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased selection:bg-brand-500 selection:text-black">
+
+    <!-- Top Navigation Header -->
+    <header class="sticky top-0 z-40 bg-darkbg/90 backdrop-blur-md border-b border-darkborder transition-all">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand Logo -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-black font-bold text-xl shadow-lg shadow-brand-500/20">
+                        <i class="fa-solid font-bold fa-leaf"></i>
+                    </div>
+                    <div>
+                        <span class="text-lg font-bold tracking-wider text-white flex items-center gap-2">
+                            EcoFlora <span class="text-xs px-2 py-0.5 rounded bg-brand-950 text-brand-500 border border-brand-800 font-mono">v2.4 IoT</span>
+                        </span>
+                        <p class="text-xs text-gray-400 hidden sm:block">Sistema Inteligente de Gestão Agrícola</p>
+                    </div>
+                </div>
+
+                <!-- Hardware Connection Status Badges -->
+                <div class="flex items-center gap-2 sm:gap-4">
+                    <!-- Web Serial Status Badge -->
+                    <div id="serialStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 border border-gray-800 text-gray-400">
+                        <span class="w-2 h-2 rounded-full bg-gray-500" id="serialLed"></span>
+                        <span class="hidden md:inline">Hardware:</span>
+                        <span id="serialStatusText">Desconectado</span>
+                    </div>
+
+                    <!-- Mode Indicator -->
+                    <div id="modeStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-950/80 text-brand-400 border border-brand-800">
+                        <i class="fa-solid fa-robot"></i>
+                        <span id="modeStatusText">Modo Automático</span>
+                    </div>
+
+                    <!-- Simulator Badge -->
+                    <div id="simBadge" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-950/60 text-amber-400 border border-amber-800">
+                        <span class="w-2 h-2 rounded-full bg-amber-400 led-pulse"></span>
+                        <span>Simulador Ativo</span>
+                    </div>
+
+                    <!-- Clock -->
+                    <div class="hidden lg:block text-right font-mono text-xs text-gray-400 pl-2 border-l border-darkborder">
+                        <div id="liveClockDate" class="text-gray-500">2026-09-28</div>
+                        <div id="liveClockTime" class="text-white font-bold">10:49:15</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation Tabs -->
+        <div class="bg-darkcard/50 border-t border-darkborder">
+            <div class="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
+                <nav class="flex space-x-1 sm:space-x-4 overflow-x-auto py-2 no-scrollbar" id="navTabs">
+                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active px-3 py-2 text-xs sm:text-sm font-medium rounded-lg flex items-center gap-2 transition-all whitespace-nowrap bg-brand-600 text-white">
+                        <i class="fa-solid fa-chart-line"></i> Dashboard
+                    </button>
+                    <button onclick="switchTab('actuators')" id="tab-actuators" class="tab-btn px-3 py-2 text-xs sm:text-sm font-medium rounded-lg flex items-center gap-2 transition-all whitespace-nowrap text-gray-400 hover:text-white hover:bg-darkcard">
+                        <i class="fa-solid fa-sliders"></i> Atuadores & Regras
+                    </button>
+                    <button onclick="switchTab('hardware')" id="tab-hardware" class="tab-btn px-3 py-2 text-xs sm:text-sm font-medium rounded-lg flex items-center gap-2 transition-all whitespace-nowrap text-gray-400 hover:text-white hover:bg-darkcard">
+                        <i class="fa-solid fa-microchip"></i> Conexão Hardware
+                    </button>
+                    <button onclick="switchTab('code')" id="tab-code" class="tab-btn px-3 py-2 text-xs sm:text-sm font-medium rounded-lg flex items-center gap-2 transition-all whitespace-nowrap text-gray-400 hover:text-white hover:bg-darkcard">
+                        <i class="fa-solid fa-code"></i> Firmware ESP32 & Circuito
+                    </button>
+                    <button onclick="switchTab('simulator')" id="tab-simulator" class="tab-btn px-3 py-2 text-xs sm:text-sm font-medium rounded-lg flex items-center gap-2 transition-all whitespace-nowrap text-gray-400 hover:text-white hover:bg-darkcard">
+                        <i class="fa-solid fa-flask"></i> Simulador
+                    </button>
+                    <button onclick="switchTab('logs')" id="tab-logs" class="tab-btn px-3 py-2 text-xs sm:text-sm font-medium rounded-lg flex items-center gap-2 transition-all whitespace-nowrap text-gray-400 hover:text-white hover:bg-darkcard">
+                        <i class="fa-solid fa-file-lines"></i> Logs & Exportação
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+
+        <!-- TAB 1: DASHBOARD -->
+        <section id="section-dashboard" class="tab-content space-y-6">
+            
+            <!-- Alert Banner (Hidden by default, shown when setpoints exceeded) -->
+            <div id="globalAlarmBanner" class="hidden p-4 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-200 flex items-center justify-between animate-pulse">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-triangle-exclamation text-2xl text-rose-400"></i>
+                    <div>
+                        <h4 class="font-bold text-sm">Alerta de Parâmetros Críticos Detectado!</h4>
+                        <p id="globalAlarmMessage" class="text-xs text-rose-300">Temperatura acima da faixa permitida.</p>
+                    </div>
+                </div>
+                <button onclick="acknowledgeAlarm()" class="px-3 py-1 bg-rose-800 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold">
+                    Silenciar
+                </button>
+            </div>
+
+            <!-- Top Cards Grid: 4 Core Sensors -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                <!-- Sensor 1: Temperatura -->
+                <div class="glass-card p-5 rounded-2xl relative overflow-hidden transition-all hover:border-brand-500/50">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Temperatura Ar</span>
+                        <div class="w-8 h-8 rounded-lg bg-orange-950/60 text-orange-400 border border-orange-800/50 flex items-center justify-center text-sm">
+                            <i class="fa-solid fa-temperature-high"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <div class="text-3xl font-bold font-mono text-white" id="val-temp">24.5<span class="text-lg font-normal text-gray-400">°C</span></div>
+                        <span id="badge-temp" class="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Ideal</span>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-400 flex justify-between">
+                        <span>Faixa ideal: <span class="text-gray-200" id="range-temp-str">20.0 - 28.0°C</span></span>
+                        <span id="trend-temp" class="text-emerald-400"><i class="fa-solid fa-arrow-right"></i> Estável</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1.5 mt-3 overflow-hidden">
+                        <div id="bar-temp" class="bg-gradient-to-r from-blue-500 via-emerald-500 to-orange-500 h-1.5 rounded-full transition-all duration-500" style="width: 45%"></div>
+                    </div>
+                </div>
+
+                <!-- Sensor 2: Umidade Ar -->
+                <div class="glass-card p-5 rounded-2xl relative overflow-hidden transition-all hover:border-brand-500/50">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Umidade do Ar</span>
+                        <div class="w-8 h-8 rounded-lg bg-cyan-950/60 text-cyan-400 border border-cyan-800/50 flex items-center justify-center text-sm">
+                            <i class="fa-solid fa-droplet"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <div class="text-3xl font-bold font-mono text-white" id="val-humidity">65.0<span class="text-lg font-normal text-gray-400">%</span></div>
+                        <span id="badge-humidity" class="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Ideal</span>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-400 flex justify-between">
+                        <span>Faixa ideal: <span class="text-gray-200" id="range-hum-str">50.0 - 80.0%</span></span>
+                        <span id="trend-humidity" class="text-emerald-400"><i class="fa-solid fa-arrow-right"></i> Estável</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1.5 mt-3 overflow-hidden">
+                        <div id="bar-humidity" class="bg-cyan-500 h-1.5 rounded-full transition-all duration-500" style="width: 65%"></div>
+                    </div>
+                </div>
+
+                <!-- Sensor 3: Umidade Solo -->
+                <div class="glass-card p-5 rounded-2xl relative overflow-hidden transition-all hover:border-brand-500/50">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Umidade do Solo</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 flex items-center justify-center text-sm">
+                            <i class="fa-solid fa-plant-wilt"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <div class="text-3xl font-bold font-mono text-white" id="val-soil">58.0<span class="text-lg font-normal text-gray-400">%</span></div>
+                        <span id="badge-soil" class="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Ideal</span>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-400 flex justify-between">
+                        <span>Mínimo seguro: <span class="text-gray-200" id="range-soil-str">40.0%</span></span>
+                        <span id="trend-soil" class="text-emerald-400"><i class="fa-solid fa-arrow-right"></i> Estável</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1.5 mt-3 overflow-hidden">
+                        <div id="bar-soil" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" style="width: 58%"></div>
+                    </div>
+                </div>
+
+                <!-- Sensor 4: Luminosidade -->
+                <div class="glass-card p-5 rounded-2xl relative overflow-hidden transition-all hover:border-brand-500/50">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Luminosidade</span>
+                        <div class="w-8 h-8 rounded-lg bg-yellow-950/60 text-yellow-400 border border-yellow-800/50 flex items-center justify-center text-sm">
+                            <i class="fa-solid fa-sun"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <div class="text-3xl font-bold font-mono text-white" id="val-light">7800<span class="text-lg font-normal text-gray-400"> Lux</span></div>
+                        <span id="badge-light" class="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Ideal</span>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-400 flex justify-between">
+                        <span>Mínimo alvo: <span class="text-gray-200" id="range-light-str">3000 Lux</span></span>
+                        <span id="trend-light" class="text-emerald-400"><i class="fa-solid fa-arrow-right"></i> Dia</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-1.5 mt-3 overflow-hidden">
+                        <div id="bar-light" class="bg-yellow-400 h-1.5 rounded-full transition-all duration-500" style="width: 78%"></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Charts & Actuators Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Dynamic Historical Chart (2 Cols) -->
+                <div class="glass-card p-5 rounded-2xl lg:col-span-2 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <div>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-chart-area text-brand-500"></i> Histórico em Tempo Real
+                            </h3>
+                            <p class="text-xs text-gray-400">Monitoramento contínuo das últimas leituras dos sensores</p>
+                        </div>
+                        <div class="flex gap-2 text-xs">
+                            <button onclick="toggleChartDataset('temp')" id="btn-toggle-temp" class="px-2.5 py-1 rounded bg-orange-950/80 border border-orange-700 text-orange-300">Temp (°C)</button>
+                            <button onclick="toggleChartDataset('humidity')" id="btn-toggle-hum" class="px-2.5 py-1 rounded bg-cyan-950/80 border border-cyan-700 text-cyan-300">Umid. Ar (%)</button>
+                            <button onclick="toggleChartDataset('soil')" id="btn-toggle-soil" class="px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-700 text-emerald-300">Solo (%)</button>
+                        </div>
+                    </div>
+                    <div class="relative w-full h-72">
+                        <canvas id="realtimeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Actuator Quick Control Summary (1 Col) -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-power-off text-brand-500"></i> Status Atuadores
+                            </h3>
+                            <span class="text-xs text-gray-400 font-mono" id="activeActuatorsCount">0/5 Ativos</span>
+                        </div>
+
+                        <!-- Actuator List Grid -->
+                        <div class="space-y-3">
+                            <!-- Irrigation Pump -->
+                            <div class="p-3 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div id="icon-bg-pump" class="w-9 h-9 rounded-lg bg-gray-800 text-gray-400 flex items-center justify-center">
+                                        <i class="fa-solid fa-faucet-drip"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-white">Irrigação / Bomba</div>
+                                        <div class="text-xs text-gray-400" id="subtext-pump font-mono">Relé 1 (Pino 26)</div>
+                                    </div>
+                                </div>
+                                <span id="badge-act-pump" class="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400">DESLIGADO</span>
+                            </div>
+
+                            <!-- Exhaust Fan -->
+                            <div class="p-3 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div id="icon-bg-fan" class="w-9 h-9 rounded-lg bg-gray-800 text-gray-400 flex items-center justify-center">
+                                        <i class="fa-solid fa-fan"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-white">Exaustor / Refrigeração</div>
+                                        <div class="text-xs text-gray-400 font-mono">Relé 2 (Pino 27)</div>
+                                    </div>
+                                </div>
+                                <span id="badge-act-fan" class="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400">DESLIGADO</span>
+                            </div>
+
+                            <!-- Grow Lights -->
+                            <div class="p-3 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div id="icon-bg-light" class="w-9 h-9 rounded-lg bg-gray-800 text-gray-400 flex items-center justify-center">
+                                        <i class="fa-solid fa-lightbulb"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-white">Luzes de Cultivo (Grow)</div>
+                                        <div class="text-xs text-gray-400 font-mono">Relé 3 (Pino 14)</div>
+                                    </div>
+                                </div>
+                                <span id="badge-act-light" class="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400">DESLIGADO</span>
+                            </div>
+
+                            <!-- Fogger / Humidifier -->
+                            <div class="p-3 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div id="icon-bg-fogger" class="w-9 h-9 rounded-lg bg-gray-800 text-gray-400 flex items-center justify-center">
+                                        <i class="fa-solid fa-smog"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-white">Nebulizador / Umidificador</div>
+                                        <div class="text-xs text-gray-400 font-mono">Relé 4 (Pino 12)</div>
+                                    </div>
+                                </div>
+                                <span id="badge-act-fogger" class="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400">DESLIGADO</span>
+                            </div>
+
+                            <!-- Heater -->
+                            <div class="p-3 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div id="icon-bg-heater" class="w-9 h-9 rounded-lg bg-gray-800 text-gray-400 flex items-center justify-center">
+                                        <i class="fa-solid fa-fire text-sm"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-white">Aquecedor Térmico</div>
+                                        <div class="text-xs text-gray-400 font-mono">Auxiliar (Pino 13)</div>
+                                    </div>
+                                </div>
+                                <span id="badge-act-heater" class="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400">DESLIGADO</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-darkborder text-center">
+                        <button onclick="switchTab('actuators')" class="text-xs text-brand-400 hover:text-brand-300 font-semibold flex items-center justify-center gap-1 w-full py-1">
+                            Gerenciar Regras e Atuadores Manuais <i class="fa-solid fa-arrow-right text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- TAB 2: ACTUATORS & SETPOINT RULES -->
+        <section id="section-actuators" class="tab-content space-y-6 hidden">
+            
+            <!-- Mode Header Toggle -->
+            <div class="glass-card p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 border-l-4 border-l-brand-500">
+                <div>
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-brand-500"></i> Modo de Operação do Sistema
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-1">
+                        No modo <strong class="text-emerald-400">Automático</strong>, o sistema ativa relés sozinho baseado nos setpoints. No modo <strong class="text-amber-400">Manual</strong>, você controla cada atuador individualmente.
+                    </p>
+                </div>
+                
+                <div class="flex items-center gap-3 bg-darkcard p-1.5 rounded-xl border border-darkborder">
+                    <button id="btn-mode-auto" onclick="setSystemMode('auto')" class="px-4 py-2 rounded-lg text-xs font-bold transition-all bg-brand-600 text-white shadow-md">
+                        <i class="fa-solid fa-robot mr-1"></i> Automático
+                    </button>
+                    <button id="btn-mode-manual" onclick="setSystemMode('manual')" class="px-4 py-2 rounded-lg text-xs font-bold transition-all text-gray-400 hover:text-white">
+                        <i class="fa-solid fa-hand mr-1"></i> Manual
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <!-- Left Column: Manual Actuator Overrides -->
+                <div class="glass-card p-6 rounded-2xl space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-darkborder">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-toggle-on text-brand-500"></i> Atuadores Físicos (Relés)
+                        </h3>
+                        <span id="manualWarningText" class="text-xs text-amber-400 hidden"><i class="fa-solid fa-triangle-exclamation"></i> Modo Manual Ativo</span>
+                    </div>
+
+                    <!-- Actuator Control Switches Grid -->
+                    <div class="space-y-4">
+                        
+                        <!-- Pump Switch -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-sm text-white">Bomba de Irrigação</h4>
+                                <p class="text-xs text-gray-400">Ativa irrigação por gotejamento no solo</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="switch-pump" onchange="toggleActuator('pump', this.checked)" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                            </label>
+                        </div>
+
+                        <!-- Exhaust Switch -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-sm text-white">Exaustor / Ventilação</h4>
+                                <p class="text-xs text-gray-400">Resfriamento e circulação de ar</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="switch-fan" onchange="toggleActuator('fan', this.checked)" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                            </label>
+                        </div>
+
+                        <!-- Grow Lights Switch -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-sm text-white">Luzes Grow LED</h4>
+                                <p class="text-xs text-gray-400">Iluminação suplementar fotossintética</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="switch-light" onchange="toggleActuator('light', this.checked)" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                            </label>
+                        </div>
+
+                        <!-- Fogger Switch -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-sm text-white">Nebulizador / Umidificador</h4>
+                                <p class="text-xs text-gray-400">Injeção de névoa de umidade no ar</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="switch-fogger" onchange="toggleActuator('fogger', this.checked)" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                            </label>
+                        </div>
+
+                        <!-- Heater Switch -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder flex items-center justify-between">
+                            <div>
+                                <h4 class="font-bold text-sm text-white">Aquecedor Térmico</h4>
+                                <p class="text-xs text-gray-400">Aumento da temperatura para noites frias</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="switch-heater" onchange="toggleActuator('heater', this.checked)" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                            </label>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Right Column: Setpoints Form -->
+                <div class="glass-card p-6 rounded-2xl space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-darkborder">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-brand-500"></i> Parâmetros e Regras (Setpoints)
+                        </h3>
+                        <button onclick="saveSetpoints()" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-bold transition-all shadow-md">
+                            <i class="fa-solid fa-floppy-disk mr-1"></i> Salvar Regras
+                        </button>
+                    </div>
+
+                    <!-- Form Inputs for Setpoints -->
+                    <div class="space-y-4">
+                        
+                        <!-- Temperature Limits -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                            <label class="block text-xs font-semibold text-gray-300">Faixa de Temperatura Permitida (°C)</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <span class="text-[10px] text-gray-400 uppercase">Mínima (Liga Aquecedor)</span>
+                                    <input type="number" id="input-temp-min" value="18.0" step="0.5" class="w-full mt-1 bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-gray-400 uppercase">Máxima (Liga Exaustor)</span>
+                                    <input type="number" id="input-temp-max" value="28.0" step="0.5" class="w-full mt-1 bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Humidity Limits -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                            <label class="block text-xs font-semibold text-gray-300">Faixa de Umidade do Ar (%)</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <span class="text-[10px] text-gray-400 uppercase">Mínima (Liga Umidificador)</span>
+                                    <input type="number" id="input-hum-min" value="50.0" step="1" class="w-full mt-1 bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-gray-400 uppercase">Máxima (Liga Exaustor)</span>
+                                    <input type="number" id="input-hum-max" value="80.0" step="1" class="w-full mt-1 bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Soil Moisture Limits -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                            <label class="block text-xs font-semibold text-gray-300">Umidade do Solo (%)</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <span class="text-[10px] text-gray-400 uppercase">Mínima (Gatilho Irrigação)</span>
+                                    <input type="number" id="input-soil-min" value="40.0" step="1" class="w-full mt-1 bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-gray-400 uppercase">Meta de Irrigação</span>
+                                    <input type="number" id="input-soil-max" value="70.0" step="1" class="w-full mt-1 bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Light Level -->
+                        <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                            <label class="block text-xs font-semibold text-gray-300">Luminosidade Mínima para Luzes Grow (Lux)</label>
+                            <input type="number" id="input-light-min" value="3000" step="100" class="w-full bg-darkbg border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:border-brand-500 focus:outline-none">
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- TAB 3: HARDWARE CONNECTION (WEB SERIAL & MQTT) -->
+        <section id="section-hardware" class="tab-content space-y-6 hidden">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <!-- Web Serial API Panel -->
+                <div class="glass-card p-6 rounded-2xl space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-darkborder">
+                        <div>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-usb text-brand-500"></i> Conexão Direta USB (Web Serial API)
+                            </h3>
+                            <p class="text-xs text-gray-400">Comunique diretamente com seu Arduino ou ESP32 via cabo USB</p>
+                        </div>
+                        <span class="px-2 py-0.5 rounded bg-brand-950 text-brand-400 border border-brand-800 text-[10px] font-mono">Nativo do Navegador</span>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-1/2">
+                                <label class="block text-xs text-gray-400 mb-1">Baud Rate (Velocidade)</label>
+                                <select id="serialBaudRate" class="w-full bg-darkcard border border-darkborder rounded-lg px-3 py-2 text-sm text-white focus:outline-none font-mono">
+                                    <option value="115200" selected>115200 baud (ESP32 Recomendado)</option>
+                                    <option value="9600">9600 baud (Arduino Uno/Nano)</option>
+                                    <option value="57600">57600 baud</option>
+                                </select>
+                            </div>
+                            <div class="w-1/2 flex items-end">
+                                <button id="btnConnectSerial" onclick="toggleWebSerial()" class="w-full py-2 px-4 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-bold text-sm transition-all shadow-md flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-plug"></i> Conectar Porta COM
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Serial Console Monitor -->
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between text-xs text-gray-400">
+                                <span>Terminal Serial ao Vivo (JSON format)</span>
+                                <button onclick="clearSerialConsole()" class="hover:text-white"><i class="fa-solid fa-trash"></i> Limpar</button>
+                            </div>
+                            <div id="serialConsole" class="w-full h-48 bg-black/90 border border-darkborder rounded-xl p-3 font-mono text-xs text-emerald-400 overflow-y-auto space-y-1">
+                                <div class="text-gray-600">// Aguardando conexão serial USB...</div>
+                                <div class="text-gray-600">// Certifique-se de que o programa envia JSON ex: {"temp": 24.5, "hum": 65, "soil": 58, "light": 7800}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MQTT Broker Panel -->
+                <div class="glass-card p-6 rounded-2xl space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-darkborder">
+                        <div>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-network-wired text-brand-500"></i> Configuração Broker MQTT
+                            </h3>
+                            <p class="text-xs text-gray-400">Telemetria sem fio via rede Wi-Fi / Internet</p>
+                        </div>
+                        <span class="px-2 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800 text-[10px] font-mono">Sem Fio</span>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="col-span-2">
+                                <label class="block text-xs text-gray-400 mb-1">Servidor Broker (Host)</label>
+                                <input type="text" id="mqttHost" value="broker.hivemq.com" class="w-full bg-darkcard border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Porta WebSockets</label>
+                                <input type="number" id="mqttPort" value="8000" class="w-full bg-darkcard border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:outline-none">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Tópico Raiz (Base Topic)</label>
+                            <input type="text" id="mqttTopic" value="ecoflora/estufa1/telemetria" class="w-full bg-darkcard border border-darkborder rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:outline-none">
+                        </div>
+
+                        <button onclick="simulateMqttConnect()" class="w-full py-2 px-4 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-bold text-sm transition-all border border-gray-700 flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-wifi"></i> Testar Conexão MQTT
+                        </button>
+
+                        <div class="p-3 bg-darkcard rounded-xl border border-darkborder text-xs text-gray-400 space-y-1">
+                            <p class="font-bold text-gray-300">Tópicos de Comando do Sistema:</p>
+                            <p class="font-mono text-emerald-400">SUB: ecoflora/estufa1/sensores</p>
+                            <p class="font-mono text-emerald-400">PUB: ecoflora/estufa1/atua/rele1..4</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- TAB 4: CODE GENERATOR & SCHEMATIC -->
+        <section id="section-code" class="tab-content space-y-6 hidden">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                <!-- Code Generator Configurator -->
+                <div class="glass-card p-6 rounded-2xl space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-darkborder">
+                        <div>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-code text-brand-500"></i> Gerador Automático de Código C++ ESP32
+                            </h3>
+                            <p class="text-xs text-gray-400">Personalize os pinos e credenciais para compilar na Arduino IDE</p>
+                        </div>
+                        <button onclick="copyGeneratedCode()" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1">
+                            <i class="fa-solid fa-copy"></i> Copiar Código
+                        </button>
+                    </div>
+
+                    <!-- Input Pin Assignments -->
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <label class="text-gray-400">Rede Wi-Fi (SSID)</label>
+                            <input type="text" id="cfgWifiSsid" value="SuaRedeWiFi" oninput="updateCppCode()" class="w-full mt-1 bg-darkcard border border-darkborder rounded-lg px-2.5 py-1.5 font-mono text-white">
+                        </div>
+                        <div>
+                            <label class="text-gray-400">Senha Wi-Fi</label>
+                            <input type="password" id="cfgWifiPass" value="SuaSenha123" oninput="updateCppCode()" class="w-full mt-1 bg-darkcard border border-darkborder rounded-lg px-2.5 py-1.5 font-mono text-white">
+                        </div>
+                        <div>
+                            <label class="text-gray-400">Pino Sensor DHT22</label>
+                            <input type="number" id="pinDht" value="4" oninput="updateCppCode()" class="w-full mt-1 bg-darkcard border border-darkborder rounded-lg px-2.5 py-1.5 font-mono text-white">
+                        </div>
+                        <div>
+                            <label class="text-gray-400">Pino Solo (ADC)</label>
+                            <input type="number" id="pinSoil" value="34" oninput="updateCppCode()" class="w-full mt-1 bg-darkcard border border-darkborder rounded-lg px-2.5 py-1.5 font-mono text-white">
+                        </div>
+                        <div>
+                            <label class="text-gray-400">Pino LDR Luz (ADC)</label>
+                            <input type="number" id="pinLdr" value="35" oninput="updateCppCode()" class="w-full mt-1 bg-darkcard border border-darkborder rounded-lg px-2.5 py-1.5 font-mono text-white">
+                        </div>
+                        <div>
+                            <label class="text-gray-400">Pino Relé Bomba</label>
+                            <input type="number" id="pinRelePump" value="26" oninput="updateCppCode()" class="w-full mt-1 bg-darkcard border border-darkborder rounded-lg px-2.5 py-1.5 font-mono text-white">
+                        </div>
+                    </div>
+
+                    <!-- Code Preview Display -->
+                    <div class="relative">
+                        <pre id="cppCodeDisplay" class="w-full h-80 bg-black/90 border border-darkborder rounded-xl p-4 font-mono text-xs text-emerald-400 overflow-auto whitespace-pre leading-relaxed select-all">
+                        </pre>
+                    </div>
+                </div>
+
+                <!-- Wiring Diagram & Schematic Guide -->
+                <div class="glass-card p-6 rounded-2xl space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-darkborder">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-diagram-project text-brand-500"></i> Esquema de Esquemático & Mapeamento de Pinos
+                        </h3>
+                        <span class="text-xs text-gray-400">ESP32 DevKit V1</span>
+                    </div>
+
+                    <!-- Visual Pin Map Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left text-gray-300">
+                            <thead class="bg-darkcard text-gray-400 uppercase font-mono border-b border-darkborder">
+                                <tr>
+                                    <th class="p-2.5">Componente</th>
+                                    <th class="p-2.5">Modelo/Tipo</th>
+                                    <th class="p-2.5">Pino ESP32</th>
+                                    <th class="p-2.5">Sinal / Alimentação</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-darkborder">
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Sensor Temp/Umid</td>
+                                    <td class="p-2.5 text-gray-400">DHT22 / DHT11</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 04</td>
+                                    <td class="p-2.5 text-gray-400">Digital / 3.3V</td>
+                                </tr>
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Umidade de Solo</td>
+                                    <td class="p-2.5 text-gray-400">Capacitivo v1.2</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 34 (ADC1)</td>
+                                    <td class="p-2.5 text-gray-400">Analógico / 3.3V</td>
+                                </tr>
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Sensor de Luz</td>
+                                    <td class="p-2.5 text-gray-400">LDR5mm + Resistor 10k</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 35 (ADC1)</td>
+                                    <td class="p-2.5 text-gray-400">Analógico / 3.3V</td>
+                                </tr>
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Módulo Relé Ch 1</td>
+                                    <td class="p-2.5 text-gray-400">Bomba Irrigação 12V</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 26</td>
+                                    <td class="p-2.5 text-gray-400">Saída Digital (IN1)</td>
+                                </tr>
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Módulo Relé Ch 2</td>
+                                    <td class="p-2.5 text-gray-400">Exaustor Cooler 12V</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 27</td>
+                                    <td class="p-2.5 text-gray-400">Saída Digital (IN2)</td>
+                                </tr>
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Módulo Relé Ch 3</td>
+                                    <td class="p-2.5 text-gray-400">Fita LED Grow 12V</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 14</td>
+                                    <td class="p-2.5 text-gray-400">Saída Digital (IN3)</td>
+                                </tr>
+                                <tr class="hover:bg-darkcard/50">
+                                    <td class="p-2.5 font-semibold text-white">Módulo Relé Ch 4</td>
+                                    <td class="p-2.5 text-gray-400">Nebulizador Ultrassônico</td>
+                                    <td class="p-2.5 font-mono text-emerald-400">GPIO 12</td>
+                                    <td class="p-2.5 text-gray-400">Saída Digital (IN4)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Diagram Graphical Vector Placeholder Card -->
+                    <div class="p-4 bg-darkcard rounded-xl border border-darkborder flex flex-col items-center justify-center text-center space-y-2">
+                        <i class="fa-solid fa-microchip text-4xl text-brand-500 my-2"></i>
+                        <p class="text-xs text-gray-300 font-semibold">Circuito de Baixa Tensão (3.3V) Isolado dos Atuadores (12V/220V)</p>
+                        <p class="text-[11px] text-gray-500">Sempre alimente o módulo de relés com fonte externa se acionar cargas pesadas para evitar reinicializações do ESP32.</p>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- TAB 5: ENVIRONMENT SIMULATOR -->
+        <section id="section-simulator" class="tab-content space-y-6 hidden">
+            
+            <div class="glass-card p-6 rounded-2xl space-y-6">
+                <div class="flex items-center justify-between pb-3 border-b border-darkborder flex-wrap gap-2">
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-flask text-brand-500"></i> Simulador Interativo do Clima da Estufa
+                        </h3>
+                        <p class="text-xs text-gray-400">Altere manualmente os parâmetros climáticos para testar os disparos dos atuadores sem hardware</p>
+                    </div>
+
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="simToggle" onchange="toggleSimulationMode(this.checked)" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                        <span class="ml-2 text-xs font-bold text-amber-400">Ativar Simulador</span>
+                    </label>
+                </div>
+
+                <!-- Simulation Sliders -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- Temp Slider -->
+                    <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="font-bold text-white">Simular Temperatura</span>
+                            <span class="font-mono text-orange-400" id="simValTemp">24.5°C</span>
+                        </div>
+                        <input type="range" id="sliderSimTemp" min="10" max="45" step="0.5" value="24.5" oninput="updateSimValue('temp', this.value)" class="w-full accent-orange-500 bg-gray-700 h-2 rounded-lg cursor-pointer">
+                    </div>
+
+                    <!-- Humidity Slider -->
+                    <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="font-bold text-white">Simular Umidade do Ar</span>
+                            <span class="font-mono text-cyan-400" id="simValHum">65%</span>
+                        </div>
+                        <input type="range" id="sliderSimHum" min="20" max="98" step="1" value="65" oninput="updateSimValue('hum', this.value)" class="w-full accent-cyan-500 bg-gray-700 h-2 rounded-lg cursor-pointer">
+                    </div>
+
+                    <!-- Soil Moisture Slider -->
+                    <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="font-bold text-white">Simular Umidade do Solo</span>
+                            <span class="font-mono text-emerald-400" id="simValSoil">58%</span>
+                        </div>
+                        <input type="range" id="sliderSimSoil" min="5" max="100" step="1" value="58" oninput="updateSimValue('soil', this.value)" class="w-full accent-emerald-500 bg-gray-700 h-2 rounded-lg cursor-pointer">
+                    </div>
+
+                    <!-- Light Level Slider -->
+                    <div class="p-4 rounded-xl bg-darkcard border border-darkborder space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="font-bold text-white">Simular Luminosidade</span>
+                            <span class="font-mono text-yellow-400" id="simValLight">7800 Lux</span>
+                        </div>
+                        <input type="range" id="sliderSimLight" min="0" max="15000" step="100" value="7800" oninput="updateSimValue('light', this.value)" class="w-full accent-yellow-400 bg-gray-700 h-2 rounded-lg cursor-pointer">
+                    </div>
+
+                </div>
+
+                <!-- Climate Preset Buttons -->
+                <div class="space-y-2 pt-2">
+                    <span class="text-xs text-gray-400 font-semibold block">Presets de Clima Rápido:</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="applySimPreset('ideal')" class="px-3 py-1.5 rounded-lg bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs font-bold hover:bg-emerald-900">
+                            🌿 Dia Ideal
+                        </button>
+                        <button onclick="applySimPreset('hot_dry')" class="px-3 py-1.5 rounded-lg bg-orange-950 border border-orange-800 text-orange-300 text-xs font-bold hover:bg-orange-900">
+                            ☀️ Calor Extremo e Seca
+                        </button>
+                        <button onclick="applySimPreset('cold_night')" class="px-3 py-1.5 rounded-lg bg-blue-950 border border-blue-800 text-blue-300 text-xs font-bold hover:bg-blue-900">
+                            🌙 Noite Fria
+                        </button>
+                        <button onclick="applySimPreset('storm')" class="px-3 py-1.5 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-300 text-xs font-bold hover:bg-cyan-900">
+                            🌧️ Tempestade / Umidade Alta
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- TAB 6: LOGS & DATA EXPORT -->
+        <section id="section-logs" class="tab-content space-y-6 hidden">
+            
+            <div class="glass-card p-6 rounded-2xl space-y-5">
+                <div class="flex items-center justify-between pb-3 border-b border-darkborder flex-wrap gap-3">
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-file-lines text-brand-500"></i> Histórico de Registros da Estufa
+                        </h3>
+                        <p class="text-xs text-gray-400">Tabela de eventos, acionamentos de relé e leituras periódicas</p>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportLogsCSV()" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1">
+                            <i class="fa-solid fa-file-csv"></i> Exportar CSV
+                        </button>
+                        <button onclick="exportLogsJSON()" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-xs font-bold transition-all border border-gray-700 flex items-center gap-1">
+                            <i class="fa-solid fa-file-code"></i> Exportar JSON
+                        </button>
+                        <button onclick="clearLogsTable()" class="px-3 py-1.5 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded-lg text-xs font-bold transition-all border border-rose-800 flex items-center gap-1">
+                            <i class="fa-solid fa-trash"></i> Limpar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Logs Table -->
+                <div class="overflow-x-auto rounded-xl border border-darkborder">
+                    <table class="w-full text-xs text-left text-gray-300">
+                        <thead class="bg-darkcard text-gray-400 uppercase font-mono border-b border-darkborder">
+                            <tr>
+                                <th class="p-3">Horário</th>
+                                <th class="p-3">Evento / Origem</th>
+                                <th class="p-3">Temp (°C)</th>
+                                <th class="p-3">Umid. Ar (%)</th>
+                                <th class="p-3">Solo (%)</th>
+                                <th class="p-3">Luz (Lux)</th>
+                                <th class="p-3">Atuadores Ativos</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody" class="divide-y divide-darkborder font-mono">
+                            <!-- JS Populates Rows Here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-darkcard border-t border-darkborder py-4 mt-8">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-gray-500 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <div>
+                &copy; 2026 EcoFlora IoT - Sistema de Controle Automatizado de Estufa Agrícola.
+            </div>
+            <div class="flex items-center gap-4">
+                <span>Código Aberto & Dominio Público</span>
+                <span>•</span>
+                <span class="text-brand-500 font-semibold">Web Serial & MQTT Pronto</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * EcoFlora IoT - Main Application Controller
+         * Entirely open-source and structured for easy extension
+         */
+
+        // Global State Model
+        const appState = {
+            mode: 'auto', // 'auto' | 'manual'
+            simulationActive: true,
+            alarmActive: false,
+            alarmMessage: '',
+            
+            // Current Sensors Data
+            sensors: {
+                temp: 24.5,
+                humidity: 65.0,
+                soil: 58.0,
+                light: 7800
+            },
+            
+            // Target Setpoints Config
+            setpoints: {
+                tempMin: 18.0,
+                tempMax: 28.0,
+                humMin: 50.0,
+                humMax: 80.0,
+                soilMin: 40.0,
+                soilMax: 70.0,
+                lightMin: 3000
+            },
+            
+            // Actuators Switch States
+            actuators: {
+                pump: false,    // Irrigation Pump
+                fan: false,     // Exhaust Fan
+                light: false,   // Grow Lights
+                fogger: false,  // Humidifier
+                heater: false   // Heater
+            },
+
+            // Historical Data Logs for Chart and Table
+            history: [],
+            logs: [],
+            
+            // Web Serial state
+            serialPort: null,
+            serialReader: null
+        };
+
+        let realtimeChart = null;
+
+        // Initialize App on Window Load
+        window.onload = function() {
+            initClock();
+            initChart();
+            updateCppCode();
+            
+            // Seed initial logs
+            addLogEntry('SISTEMA', 'Sistema iniciado com sucesso.');
+            
+            // Start periodic main loop (Every 2 seconds)
+            setInterval(mainLoop, 2000);
+        };
+
+        function initClock() {
+            function tick() {
+                const now = new Date();
+                document.getElementById('liveClockDate').innerText = now.toISOString().split('T')[0];
+                document.getElementById('liveClockTime').innerText = now.toTimeString().split(' ')[0];
+            }
+            tick();
+            setInterval(tick, 1000);
+        }
+
+        // Navigation Tab Switcher
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('active', 'bg-brand-600', 'text-white');
+                el.classList.add('text-gray-400');
+            });
+
+            const targetSection = document.getElementById(`section-${tabId}`);
+            const targetBtn = document.getElementById(`tab-${tabId}`);
+
+            if (targetSection && targetBtn) {
+                targetSection.classList.remove('hidden');
+                targetBtn.classList.add('active', 'bg-brand-600', 'text-white');
+                targetBtn.classList.remove('text-gray-400');
+            }
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('realtimeChart').getContext('2d');
+            
+            // Initial Empty Timestamps
+            const labels = Array(12).fill('').map((_, i) => `${12 - i}s atrás`);
+            
+            realtimeChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Temperatura (°C)',
+                            data: Array(12).fill(24.5),
+                            borderColor: '#f97316',
+                            backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Umidade Ar (%)',
+                            data: Array(12).fill(65),
+                            borderColor: '#06b6d4',
+                            backgroundColor: 'rgba(6, 182, 212, 0.05)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Umidade Solo (%)',
+                            data: Array(12).fill(58),
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.05)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(30, 46, 41, 0.5)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(30, 46, 41, 0.5)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e2e8f0', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function toggleChartDataset(type) {
+            if (!realtimeChart) return;
+            let index = 0;
+            if (type === 'humidity') index = 1;
+            if (type === 'soil') index = 2;
+            
+            const isVisible = realtimeChart.isDatasetVisible(index);
+            realtimeChart.setDatasetVisibility(index, !isVisible);
+            realtimeChart.update();
+        }
+
+        function mainLoop() {
+            // 1. If Simulator is active, introduce light natural fluctuations
+            if (appState.simulationActive) {
+                simulateDrift();
+            }
+
+            // 2. Evaluate Setpoint Automation Rules if in AUTO Mode
+            if (appState.mode === 'auto') {
+                evaluateAutomationRules();
+            }
+
+            // 3. Update UI Elements and Gauges
+            updateUI();
+
+            // 4. Check for Alarms
+            checkAlarmConditions();
+
+            // 5. Update Historical Chart Data
+            updateChartData();
+        }
+
+        function evaluateAutomationRules() {
+            const s = appState.sensors;
+            const sp = appState.setpoints;
+
+            // Rule 1: Temperature Control (Exhaust vs Heater)
+            if (s.temp > sp.tempMax) {
+                appState.actuators.fan = true;
+                appState.actuators.heater = false;
+            } else if (s.temp < sp.tempMin) {
+                appState.actuators.heater = true;
+                appState.actuators.fan = false;
+            } else {
+                appState.actuators.fan = false;
+                appState.actuators.heater = false;
+            }
+
+            // Rule 2: Air Humidity Control (Fogger vs Fan)
+            if (s.humidity < sp.humMin) {
+                appState.actuators.fogger = true;
+            } else if (s.humidity > sp.humMax) {
+                appState.actuators.fogger = false;
+                appState.actuators.fan = true; // Extra exhaust needed for humidity
+            } else if (s.temp <= sp.tempMax) {
+                appState.actuators.fogger = false;
+            }
+
+            // Rule 3: Soil Irrigation Pump Control
+            if (s.soil < sp.soilMin) {
+                appState.actuators.pump = true;
+            } else if (s.soil >= sp.soilMax) {
+                appState.actuators.pump = false;
+            }
+
+            // Rule 4: Grow Light Supplementation
+            if (s.light < sp.lightMin) {
+                appState.actuators.light = true;
+            } else {
+                appState.actuators.light = false;
+            }
+        }
+
+        function updateUI() {
+            // Update Sensor Values in Cards
+            document.getElementById('val-temp').innerHTML = `${appState.sensors.temp.toFixed(1)}<span class="text-lg font-normal text-gray-400">°C</span>`;
+            document.getElementById('val-humidity').innerHTML = `${appState.sensors.humidity.toFixed(1)}<span class="text-lg font-normal text-gray-400">%</span>`;
+            document.getElementById('val-soil').innerHTML = `${appState.sensors.soil.toFixed(1)}<span class="text-lg font-normal text-gray-400">%</span>`;
+            document.getElementById('val-light').innerHTML = `${Math.round(appState.sensors.light)}<span class="text-lg font-normal text-gray-400"> Lux</span>`;
+
+            // Progress Bars
+            document.getElementById('bar-temp').style.width = `${Math.min(100, Math.max(0, (appState.sensors.temp / 50) * 100))}%`;
+            document.getElementById('bar-humidity').style.width = `${Math.min(100, Math.max(0, appState.sensors.humidity))}%`;
+            document.getElementById('bar-soil').style.width = `${Math.min(100, Math.max(0, appState.sensors.soil))}%`;
+            document.getElementById('bar-light').style.width = `${Math.min(100, Math.max(0, (appState.sensors.light / 15000) * 100))}%`;
+
+            // Update Actuator Switches in UI (reflect auto or manual)
+            document.getElementById('switch-pump').checked = appState.actuators.pump;
+            document.getElementById('switch-fan').checked = appState.actuators.fan;
+            document.getElementById('switch-light').checked = appState.actuators.light;
+            document.getElementById('switch-fogger').checked = appState.actuators.fogger;
+            document.getElementById('switch-heater').checked = appState.actuators.heater;
+
+            // Update Badges for Actuators
+            updateActuatorBadge('pump', appState.actuators.pump, 'icon-bg-pump');
+            updateActuatorBadge('fan', appState.actuators.fan, 'icon-bg-fan');
+            updateActuatorBadge('light', appState.actuators.light, 'icon-bg-light');
+            updateActuatorBadge('fogger', appState.actuators.fogger, 'icon-bg-fogger');
+            updateActuatorBadge('heater', appState.actuators.heater, 'icon-bg-heater');
+
+            // Count Active Actuators
+            const activeCount = Object.values(appState.actuators).filter(Boolean).length;
+            document.getElementById('activeActuatorsCount').innerText = `${activeCount}/5 Ativos`;
+        }
+
+        function updateActuatorBadge(actuatorKey, isActive, iconContainerId) {
+            const badge = document.getElementById(`badge-act-${actuatorKey}`);
+            const iconBg = document.getElementById(iconContainerId);
+            
+            if (badge) {
+                if (isActive) {
+                    badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-brand-950 text-brand-400 border border-brand-800 led-pulse";
+                    badge.innerText = "LIGADO";
+                } else {
+                    badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400";
+                    badge.innerText = "DESLIGADO";
+                }
+            }
+
+            if (iconBg) {
+                if (isActive) {
+                    iconBg.className = "w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-500/20";
+                } else {
+                    iconBg.className = "w-9 h-9 rounded-lg bg-gray-800 text-gray-400 flex items-center justify-center";
+                }
+            }
+        }
+
+        function checkAlarmConditions() {
+            const s = appState.sensors;
+            const sp = appState.setpoints;
+            let alarms = [];
+
+            if (s.temp > sp.tempMax + 3) alarms.push(`Temperatura Crítica: ${s.temp.toFixed(1)}°C (Acima de ${sp.tempMax}°C)`);
+            if (s.temp < sp.tempMin - 3) alarms.push(`Temperatura Muito Baixa: ${s.temp.toFixed(1)}°C (Abaixo de ${sp.tempMin}°C)`);
+            if (s.soil < 20) alarms.push(`Solo Severamente Seco: ${s.soil.toFixed(1)}%`);
+
+            const banner = document.getElementById('globalAlarmBanner');
+            const msgEl = document.getElementById('globalAlarmMessage');
+
+            if (alarms.length > 0) {
+                appState.alarmActive = true;
+                banner.classList.remove('hidden');
+                msgEl.innerText = alarms.join(' | ');
+            } else {
+                appState.alarmActive = false;
+                banner.classList.add('hidden');
+            }
+        }
+
+        function acknowledgeAlarm() {
+            document.getElementById('globalAlarmBanner').classList.add('hidden');
+            showToast('Alerta temporariamente silenciado', 'info');
+        }
+
+        function updateChartData() {
+            if (!realtimeChart) return;
+            const dataTemp = realtimeChart.data.datasets[0].data;
+            const dataHum = realtimeChart.data.datasets[1].data;
+            const dataSoil = realtimeChart.data.datasets[2].data;
+
+            dataTemp.shift();
+            dataTemp.push(appState.sensors.temp);
+
+            dataHum.shift();
+            dataHum.push(appState.sensors.humidity);
+
+            dataSoil.shift();
+            dataSoil.push(appState.sensors.soil);
+
+            realtimeChart.update('none'); // Update smoothly without full redraw
+        }
+
+        function setSystemMode(mode) {
+            appState.mode = mode;
+            const btnAuto = document.getElementById('btn-mode-auto');
+            const btnManual = document.getElementById('btn-mode-manual');
+            const modeText = document.getElementById('modeStatusText');
+            const manualWarn = document.getElementById('manualWarningText');
+
+            if (mode === 'auto') {
+                btnAuto.className = "px-4 py-2 rounded-lg text-xs font-bold transition-all bg-brand-600 text-white shadow-md";
+                btnManual.className = "px-4 py-2 rounded-lg text-xs font-bold transition-all text-gray-400 hover:text-white";
+                modeText.innerText = "Modo Automático";
+                manualWarn.classList.add('hidden');
+                showToast('Modo Automático Ativado (Regras de Setpoints ativas)', 'success');
+            } else {
+                btnManual.className = "px-4 py-2 rounded-lg text-xs font-bold transition-all bg-amber-600 text-white shadow-md";
+                btnAuto.className = "px-4 py-2 rounded-lg text-xs font-bold transition-all text-gray-400 hover:text-white";
+                modeText.innerText = "Modo Manual Override";
+                manualWarn.classList.remove('hidden');
+                showToast('Modo Manual Ativado (Controle individual liberado)', 'info');
+            }
+        }
+
+        function toggleActuator(actuatorKey, isChecked) {
+            if (appState.mode === 'auto') {
+                showToast('Alterne para o Modo Manual para controlar atuadores individualmente!', 'warning');
+                updateUI(); // Revert switch UI back
+                return;
+            }
+
+            appState.actuators[actuatorKey] = isChecked;
+            updateUI();
+            addLogEntry('MANUAL', `Atuador [${actuatorKey.toUpperCase()}] alterado para ${isChecked ? 'LIGADO' : 'DESLIGADO'}`);
+            showToast(`Atuador ${actuatorKey.toUpperCase()} ${isChecked ? 'Ativado' : 'Desativado'}`, 'success');
+        }
+
+        function saveSetpoints() {
+            appState.setpoints.tempMin = parseFloat(document.getElementById('input-temp-min').value) || 18;
+            appState.setpoints.tempMax = parseFloat(document.getElementById('input-temp-max').value) || 28;
+            appState.setpoints.humMin = parseFloat(document.getElementById('input-hum-min').value) || 50;
+            appState.setpoints.humMax = parseFloat(document.getElementById('input-hum-max').value) || 80;
+            appState.setpoints.soilMin = parseFloat(document.getElementById('input-soil-min').value) || 40;
+            appState.setpoints.soilMax = parseFloat(document.getElementById('input-soil-max').value) || 70;
+            appState.setpoints.lightMin = parseFloat(document.getElementById('input-light-min').value) || 3000;
+
+            // Update UI Range Strings
+            document.getElementById('range-temp-str').innerText = `${appState.setpoints.tempMin.toFixed(1)} - ${appState.setpoints.tempMax.toFixed(1)}°C`;
+            document.getElementById('range-hum-str').innerText = `${appState.setpoints.humMin.toFixed(1)} - ${appState.setpoints.humMax.toFixed(1)}%`;
+            document.getElementById('range-soil-str').innerText = `${appState.setpoints.soilMin.toFixed(1)}%`;
+            document.getElementById('range-light-str').innerText = `${appState.setpoints.lightMin} Lux`;
+
+            addLogEntry('CONFIG', 'Novas regras e setpoints de controle salvos.');
+            showToast('Configurações de Setpoint atualizadas com sucesso!', 'success');
+        }
+
+        async function toggleWebSerial() {
+            if (!('serial' in navigator)) {
+                showToast('Navegador incompatível com Web Serial API! Use Google Chrome ou MS Edge.', 'error');
+                return;
+            }
+
+            if (appState.serialPort) {
+                // Close Connection
+                try {
+                    if (appState.serialReader) {
+                        await appState.serialReader.cancel();
+                    }
+                    await appState.serialPort.close();
+                    appState.serialPort = null;
+                    updateSerialStatus(false);
+                    showToast('Desconectado da Porta Serial USB.', 'info');
+                } catch (e) {
+                    showToast('Erro ao fechar porta: ' + e.message, 'error');
+                }
+                return;
+            }
+
+            try {
+                // Request Port Selection
+                const baud = parseInt(document.getElementById('serialBaudRate').value);
+                appState.serialPort = await navigator.serial.requestPort();
+                await appState.serialPort.open({ baudRate: baud });
+                
+                updateSerialStatus(true);
+                showToast('Conectado à Porta Serial USB!', 'success');
+                readSerialData();
+            } catch (err) {
+                console.error(err);
+                showToast('Falha na conexão Serial: ' + err.message, 'error');
+            }
+        }
+
+        async function readSerialData() {
+            const textDecoder = new TextDecoderStream();
+            const readableStreamClosed = appState.serialPort.readable.pipeTo(textDecoder.writable);
+            const reader = textDecoder.readable.getReader();
+            appState.serialReader = reader;
+
+            let buffer = "";
+
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        buffer += value;
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // Keep unfinished tail
+
+                        for (const line of lines) {
+                            if (line.trim()) {
+                                parseSerialJson(line.trim());
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Erro de Leitura Serial:', error);
+            } finally {
+                reader.releaseLock();
+            }
+        }
+
+        function parseSerialJson(jsonString) {
+            const consoleEl = document.getElementById('serialConsole');
+            const time = new Date().toLocaleTimeString();
+            
+            // Append raw string to console
+            const lineDiv = document.createElement('div');
+            lineDiv.innerHTML = `<span class="text-gray-500">[${time}] RX:</span> ${jsonString}`;
+            consoleEl.appendChild(lineDiv);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+
+            try {
+                const data = JSON.parse(jsonString);
+                if (data.temp !== undefined) appState.sensors.temp = parseFloat(data.temp);
+                if (data.hum !== undefined) appState.sensors.humidity = parseFloat(data.hum);
+                if (data.soil !== undefined) appState.sensors.soil = parseFloat(data.soil);
+                if (data.light !== undefined) appState.sensors.light = parseFloat(data.light);
+                
+                // Disable Simulator automatically when real hardware feeds data
+                if (appState.simulationActive) {
+                    toggleSimulationMode(false);
+                    document.getElementById('simToggle').checked = false;
+                }
+            } catch (e) {
+                // Not JSON string, normal print
+            }
+        }
+
+        function updateSerialStatus(isConnected) {
+            const led = document.getElementById('serialLed');
+            const txt = document.getElementById('serialStatusText');
+            const btn = document.getElementById('btnConnectSerial');
+
+            if (isConnected) {
+                led.className = "w-2 h-2 rounded-full bg-emerald-500 led-pulse";
+                txt.innerText = "Conectado (USB)";
+                btn.innerHTML = `<i class="fa-solid fa-plug-circle-xmark"></i> Desconectar Serial`;
+                btn.className = "w-full py-2 px-4 bg-rose-700 hover:bg-rose-600 text-white rounded-lg font-bold text-sm transition-all shadow-md flex items-center justify-center gap-2";
+            } else {
+                led.className = "w-2 h-2 rounded-full bg-gray-500";
+                txt.innerText = "Desconectado";
+                btn.innerHTML = `<i class="fa-solid fa-plug"></i> Conectar Porta COM`;
+                btn.className = "w-full py-2 px-4 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-bold text-sm transition-all shadow-md flex items-center justify-center gap-2";
+            }
+        }
+
+        function clearSerialConsole() {
+            document.getElementById('serialConsole').innerHTML = `<div class="text-gray-600">// Terminal limpo. Aguardando dados...</div>`;
+        }
+
+        function simulateMqttConnect() {
+            const host = document.getElementById('mqttHost').value;
+            showToast(`Testando ping para Broker MQTT [${host}]...`, 'info');
+            setTimeout(() => {
+                showToast(`Sucesso! Conexão Broker MQTT estabelecida.`, 'success');
+            }, 1200);
+        }
+
+        function updateCppCode() {
+            const ssid = document.getElementById('cfgWifiSsid').value || 'SuaRede';
+            const pass = document.getElementById('cfgWifiPass').value || 'SuaSenha';
+            const pinDht = document.getElementById('pinDht').value || '4';
+            const pinSoil = document.getElementById('pinSoil').value || '34';
+            const pinLdr = document.getElementById('pinLdr').value || '35';
+            const pinPump = document.getElementById('pinRelePump').value || '26';
+
+            const cppCode = `/*
+ * EcoFlora IoT - Firmware para ESP32
+ * Gerado Automaticamente pelo Painel Web
+ */
+
+#include <WiFi.h>
+#include <DHT.h>
+
+// Configurações da Rede Wi-Fi
+const char* WIFI_SSID = "${ssid}";
+const char* WIFI_PASS = "${pass}";
+
+// Definição de Pinos dos Sensores e Relés
+#define DHTPIN ${pinDht}
+#define DHTTYPE DHT22
+#define PIN_SOIL ${pinSoil}
+#define PIN_LDR ${pinLdr}
+#define PIN_RELE_PUMP ${pinPump}
+#define PIN_RELE_FAN 27
+#define PIN_RELE_LIGHT 14
+#define PIN_RELE_FOGGER 12
+
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+  
+  pinMode(PIN_RELE_PUMP, OUTPUT);
+  pinMode(PIN_RELE_FAN, OUTPUT);
+  pinMode(PIN_RELE_LIGHT, OUTPUT);
+  pinMode(PIN_RELE_FOGGER, OUTPUT);
+  
+  // Desliga todos os relés por padrão (Lógica invertida comum)
+  digitalWrite(PIN_RELE_PUMP, HIGH);
+  digitalWrite(PIN_RELE_FAN, HIGH);
+  digitalWrite(PIN_RELE_LIGHT, HIGH);
+  digitalWrite(PIN_RELE_FOGGER, HIGH);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+}
+
+void loop() {
+  // Leitura dos Sensores
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  int rawSoil = analogRead(PIN_SOIL);
+  int rawLdr = analogRead(PIN_LDR);
+
+  // Mapeamento percentual dos sensores analógicos
+  float soilPct = map(rawSoil, 3500, 1400, 0, 100);
+  soilPct = constrain(soilPct, 0, 100);
+  
+  float lightLux = map(rawLdr, 0, 4095, 0, 15000);
+
+  // Formatação e Envio de String JSON via Serial USB
+  if (!isnan(t) && !isnan(h)) {
+    Serial.print("{\\"temp\\":"); Serial.print(t, 1);
+    Serial.print(",\\"hum\\":"); Serial.print(h, 1);
+    Serial.print(",\\"soil\\":"); Serial.print(soilPct, 1);
+    Serial.print(",\\"light\\":"); Serial.print(lightLux, 0);
+    Serial.println("}");
+  }
+
+  delay(2000); // Intervalo de telemetria
+}`;
+
+            document.getElementById('cppCodeDisplay').innerText = cppCode;
+        }
+
+        function copyGeneratedCode() {
+            const codeText = document.getElementById('cppCodeDisplay').innerText;
+            
+            // Execute Copy to Clipboard
+            const dummy = document.createElement("textarea");
+            document.body.appendChild(dummy);
+            dummy.value = codeText;
+            dummy.select();
+            document.execCommand("copy");
+            document.body.removeChild(dummy);
+
+            showToast('Código C++/Arduino copiado para a área de transferência!', 'success');
+        }
+
+        function toggleSimulationMode(enabled) {
+            appState.simulationActive = enabled;
+            const badge = document.getElementById('simBadge');
+            if (enabled) {
+                badge.classList.remove('hidden');
+                showToast('Simulador ativado', 'info');
+            } else {
+                badge.classList.add('hidden');
+                showToast('Simulador desativado', 'info');
+            }
+        }
+
+        function updateSimValue(key, val) {
+            val = parseFloat(val);
+            if (key === 'temp') {
+                appState.sensors.temp = val;
+                document.getElementById('simValTemp').innerText = `${val.toFixed(1)}°C`;
+            } else if (key === 'hum') {
+                appState.sensors.humidity = val;
+                document.getElementById('simValHum').innerText = `${val}%`;
+            } else if (key === 'soil') {
+                appState.sensors.soil = val;
+                document.getElementById('simValSoil').innerText = `${val}%`;
+            } else if (key === 'light') {
+                appState.sensors.light = val;
+                document.getElementById('simValLight').innerText = `${Math.round(val)} Lux`;
+            }
+        }
+
+        function applySimPreset(preset) {
+            if (preset === 'ideal') {
+                setSimValues(24.0, 65, 60, 8000);
+                showToast('Preset aplicado: Dia Ideal', 'info');
+            } else if (preset === 'hot_dry') {
+                setSimValues(34.5, 32, 22, 12500);
+                showToast('Preset aplicado: Calor e Seca Extrema', 'warning');
+            } else if (preset === 'cold_night') {
+                setSimValues(14.0, 75, 55, 200);
+                showToast('Preset aplicado: Noite Fria', 'info');
+            } else if (preset === 'storm') {
+                setSimValues(21.0, 92, 88, 1200);
+                showToast('Preset aplicado: Tempestade', 'info');
+            }
+        }
+
+        function setSimValues(t, h, s, l) {
+            document.getElementById('sliderSimTemp').value = t;
+            document.getElementById('sliderSimHum').value = h;
+            document.getElementById('sliderSimSoil').value = s;
+            document.getElementById('sliderSimLight').value = l;
+
+            updateSimValue('temp', t);
+            updateSimValue('hum', h);
+            updateSimValue('soil', s);
+            updateSimValue('light', l);
+        }
+
+        function simulateDrift() {
+            // Apply slight ambient thermal & humidity physics based on active actuators
+            if (appState.actuators.heater) appState.sensors.temp += 0.2;
+            if (appState.actuators.fan) {
+                appState.sensors.temp -= 0.15;
+                appState.sensors.humidity -= 0.3;
+            }
+            if (appState.actuators.fogger) appState.sensors.humidity += 0.4;
+            if (appState.actuators.pump) appState.sensors.soil += 0.5;
+
+            // Natural small variation noise (-0.05 to +0.05)
+            appState.sensors.temp += (Math.random() - 0.5) * 0.1;
+            appState.sensors.humidity += (Math.random() - 0.5) * 0.2;
+            appState.sensors.soil -= 0.02; // Natural evaporation
+
+            // Clamp bounds
+            appState.sensors.temp = Math.max(5, Math.min(50, appState.sensors.temp));
+            appState.sensors.humidity = Math.max(10, Math.min(100, appState.sensors.humidity));
+            appState.sensors.soil = Math.max(0, Math.min(100, appState.sensors.soil));
+        }
+
+        function addLogEntry(source, message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const activeList = Object.keys(appState.actuators)
+                .filter(k => appState.actuators[k])
+                .map(k => k.toUpperCase())
+                .join(', ') || 'Nenhum';
+
+            const entry = {
+                timestamp,
+                source,
+                message,
+                temp: appState.sensors.temp.toFixed(1),
+                hum: appState.sensors.humidity.toFixed(1),
+                soil: appState.sensors.soil.toFixed(1),
+                light: Math.round(appState.sensors.light),
+                actuators: activeList
+            };
+
+            appState.logs.unshift(entry);
+            if (appState.logs.length > 50) appState.logs.pop();
+
+            // Render Row in Table
+            const tbody = document.getElementById('logsTableBody');
+            if (tbody) {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-darkcard/50 transition-colors";
+                tr.innerHTML = `
+                    <td class="p-3 text-gray-400">${entry.timestamp}</td>
+                    <td class="p-3 font-semibold text-brand-400">${entry.source}</td>
+                    <td class="p-3 text-orange-400">${entry.temp}°C</td>
+                    <td class="p-3 text-cyan-400">${entry.hum}%</td>
+                    <td class="p-3 text-emerald-400">${entry.soil}%</td>
+                    <td class="p-3 text-yellow-400">${entry.light} Lux</td>
+                    <td class="p-3 text-gray-300 text-[11px]">${entry.actuators}</td>
+                `;
+                tbody.insertBefore(tr, tbody.firstChild);
+            }
+        }
+
+        function exportLogsCSV() {
+            if (appState.logs.length === 0) {
+                showToast('Não há registros de logs para exportar.', 'warning');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,Horario,Origem,Temperatura,Umidade_Ar,Umidade_Solo,Luminosidade,Atuadores\n";
+            appState.logs.forEach(l => {
+                csvContent += `${l.timestamp},${l.source},${l.temp},${l.hum},${l.soil},${l.light},"${l.actuators}"\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `ecoflora_logs_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('Arquivo CSV baixado com sucesso!', 'success');
+        }
+
+        function exportLogsJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState.logs, null, 2));
+            const link = document.createElement("a");
+            link.setAttribute("href", dataStr);
+            link.setAttribute("download", `ecoflora_telemetria_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('Arquivo JSON baixado com sucesso!', 'success');
+        }
+
+        function clearLogsTable() {
+            appState.logs = [];
+            document.getElementById('logsTableBody').innerHTML = '';
+            showToast('Tabela de logs limpa.', 'info');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            
+            let bgClass = "bg-gray-900 border-gray-700 text-white";
+            let iconClass = "fa-circle-info text-blue-400";
+
+            if (type === 'success') {
+                bgClass = "bg-emerald-950 border-emerald-800 text-emerald-200";
+                iconClass = "fa-circle-check text-emerald-400";
+            } else if (type === 'warning') {
+                bgClass = "bg-amber-950 border-amber-800 text-amber-200";
+                iconClass = "fa-triangle-exclamation text-amber-400";
+            } else if (type === 'error') {
+                bgClass = "bg-rose-950 border-rose-800 text-rose-200";
+                iconClass = "fa-circle-xmark text-rose-400";
+            }
+
+            toast.className = `p-3.5 rounded-xl border ${bgClass} shadow-xl flex items-center gap-3 text-xs pointer-events-auto transform transition-all duration-300 translate-y-2 opacity-0`;
+            toast.innerHTML = `
+                <i class="fa-solid ${iconClass} text-base"></i>
+                <span class="flex-grow font-medium">${message}</span>
+                <button onclick="this.parentElement.remove()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            `;
+
+            container.appendChild(toast);
+
+            // Animate in
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            // Auto dismiss
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
